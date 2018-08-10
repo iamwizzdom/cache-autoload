@@ -4,8 +4,8 @@
  * User: Wisdom Emenike
  * Date: 7/31/2018
  * Time: 2:35 PM
+ * Git: https://github.com/iamwizzdom/cache-autoload
  */
-
 
 class CacheAutoload
 {
@@ -16,14 +16,15 @@ class CacheAutoload
         'assets',
         'tmp',
         'uploads',
-        'template',
-        'api'
+        'template'
     ];
 
     private static $suffix = [
         '.php',
         '.class.php'
     ];
+
+    private static $root_dir = APP_PATH;
 
     private static function setLoader(string $key, string $value){
         self::$loader[$key] = $value;
@@ -78,12 +79,11 @@ class CacheAutoload
 
             } else {
 
-                self::findFile("..", $name, self::$except);
+                self::findFile(self::$root_dir, $name, self::$except);
 
             }
-
+            return true;
         });
-
 
     }
 
@@ -102,12 +102,13 @@ class CacheAutoload
 
                 $class = str_replace("\\", "/", $fileName);
                 $class = explode("/", $class);
-                $filePath = "";
-                foreach (self::$suffix as $ext) {
-                    $file = $path . "/" . $class[(count($class) - 1)] . $ext;
+                $filePath = ""; $count = 0; $suffix_size = count(self::$suffix);
+                while (empty($filePath) && $count < $suffix_size) {
+                    $file = $path . "/" . $class[(count($class) - 1)] . self::$suffix[$count];
                     if (is_file($file)) {
                         $filePath = $file;
                     }
+                    $count++;
                 }
 
                 if (!empty($filePath)) {
