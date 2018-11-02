@@ -21,7 +21,10 @@ class CacheAutoload
 
     private static $suffix = [
         '.php',
-        '.class.php'
+        '.class.php',
+        ".abstract.php",
+        ".interface.php",
+        ".exception.php"
     ];
 
     private static $root_dir = APP_PATH;
@@ -189,6 +192,7 @@ class CacheAutoload
         for ($i = 2; $i < $count; $i++) {
             if (($tokens[$i - 2][0] == T_CLASS ||
                     $tokens[$i - 2][0] == T_INTERFACE ||
+                    $tokens[$i - 2][0] == T_ABSTRACT ||
                     $tokens[$i - 2][0] == T_TRAIT)
                 && $tokens[$i - 1][0] == T_WHITESPACE
                 && $tokens[$i][0] == T_STRING
