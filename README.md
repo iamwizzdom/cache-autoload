@@ -7,9 +7,10 @@ which means you can create your files anywhere in your project and cache-autoloa
 
 #use
 
-``<?php
+```<?php
+
 define('APP_ROOT', 'Your project root folder');
 
 require "app.autoload.php";
 
-?>``
+?>```
