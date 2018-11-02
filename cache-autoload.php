@@ -27,7 +27,7 @@ class CacheAutoload
         ".exception.php"
     ];
 
-    private static $root_dir = APP_PATH;
+    private static $root_dir = APP_ROOT;
 
     private static function setLoader(string $key, string $value){
         self::$loader[$key] = $value;
