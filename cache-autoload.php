@@ -14,7 +14,7 @@ class CacheAutoload
      * file paths in runtime
      * @var array
      */
-    private static $loader = [];
+    private static $cache = [];
 
     /**
      * This property defines all possible file extensions
@@ -38,26 +38,34 @@ class CacheAutoload
 
     /**
      * This property defines an array of folder
-     * names CacheAutoload must not scan
+     * names CacheAutoload must not scan or pick files from
      * @var array
      */
-    private static $except = AUTOLOAD_EXCEPT;
+    private static $exclude = AUTOLOAD_EXCLUDE;
 
     /**
-     * This property defines an array of file paths which
+     * This property defines an array of
+     * file paths which
      * CacheAutoload must require each time the server is hit
      * @var array
      */
     private static $require = AUTOLOAD_REQUIRE;
 
     /**
-     * This method adds more file paths to the $loader
+     * This property defines the path to CacheAutoload's cache
+     * file, where CacheAutoload stores a cache of all file paths
+     * @var string
+     */
+    private static $cache_file_path = APP_ROOT_PATH . "/autoload.json";
+
+    /**
+     * This method adds more file paths to the $cache
      * @param string $key
      * @param string $value
      */
-    private static function setLoader(string $key, string $value){
+    private static function setCache(string $key, string $value){
         $_SESSION['autoload'][$key] = $value;
-        self::storeLoader();
+        self::storeCache();
     }
 
     /**
@@ -65,20 +73,21 @@ class CacheAutoload
      * file paths
      * @return array|mixed
      */
-    private static function getLoader()
+    private static function getCache()
     {
 
-        if (!empty($_SESSION['autoload']) && is_array($_SESSION['autoload'])) return $_SESSION['autoload'];
+        if (!empty($_SESSION['autoload']) &&
+            is_array($_SESSION['autoload'])) return $_SESSION['autoload'];
 
         $_SESSION['autoload'] = [];
 
-        if (file_exists("loader.json")) {
-            $loader_file = @fopen("loader.json", "r") or die("Unable to open <b>loader.json</b> file!");
-            $loader_json_file = @fread($loader_file, filesize("loader.json"));
-            if (strlen(trim($loader_json_file)) > 0) {
-                $_SESSION['autoload'] = json_decode($loader_json_file, true);
-            }
-            @fclose($loader_file);
+        if (file_exists(self::$cache_file_path)) {
+            $cache_file = @fopen(self::$cache_file_path, "r")
+            or die("Unable to open cache file!");
+            $cache_json_file = @fread($cache_file, filesize(self::$cache_file_path));
+            if (!empty($cache_json_file))
+                $_SESSION['autoload'] = json_decode($cache_json_file, true);
+            @fclose($cache_file);
         }
 
         return $_SESSION['autoload'];
@@ -86,14 +95,15 @@ class CacheAutoload
     }
 
     /**
-     * This method is the reason why this autoloader is called CacheAutoload.
+     * This method is the reason why this autocache is called CacheAutoload.
      * It caches all previously loaded file paths
      */
-    private static function storeLoader()
+    private static function storeCache()
     {
-        $loader = @fopen("loader.json", "w") or die("Unable to open <b>loader.json</b> file!");
-        @fwrite($loader, json_encode(self::getLoader(), JSON_PRETTY_PRINT));
-        @fclose($loader);
+        $cache = @fopen(self::$cache_file_path, "w")
+        or die("Unable to open cache file!");
+        @fwrite($cache, json_encode(self::getCache(), JSON_PRETTY_PRINT));
+        @fclose($cache);
     }
 
     /**
@@ -105,21 +115,20 @@ class CacheAutoload
 
         foreach (self::$require as $file) if (is_file($file)) require "$file";
 
-        spl_autoload_register(function ($name) {
+        spl_autoload_register(function ($class_name) {
 
-            self::$loader = self::getLoader();
+            self::$cache = self::getCache();
 
-            $hash = hash("SHA1", $name);
+            $hash = hash("SHA1", $class_name);
 
-            if (!isset(self::$loader[$hash])) {
-                self::findFile(self::$root_dir, $name, self::$except);
+            if (!isset(self::$cache[$hash])) {
+                self::findFile(self::$root_dir, $class_name, self::$exclude);
                 return true;
             }
 
-            $path_arr = explode("/", self::$loader[$hash]);
-            foreach (self::$except as $exc) if (in_array($exc, $path_arr)) return false;
-            $file = self::$loader[$hash];
-            if (is_file($file)) require "$file"; else self::findFile(self::$root_dir, $name, self::$except);
+            $file = self::$cache[$hash];
+            if (self::has_exclude($file, self::$exclude)) return false;
+            if (is_file($file)) require "$file"; else self::findFile(self::$root_dir, $class_name, self::$exclude);
 
             return true;
         });
@@ -131,17 +140,15 @@ class CacheAutoload
      * by CacheAutoload
      * @param $dir
      * @param $fileName
-     * @param array $except
+     * @param array $exclude
      */
-    private static function findFile($dir, $fileName, $except = [])
+    private static function findFile($dir, $fileName, $exclude = [])
     {
         $glob = glob($dir . "/*");
 
         foreach ($glob as $path) {
 
-            $dir_name = explode("/", str_replace("\\", "/", $path));
-
-            if (in_array($dir_name[(count($dir_name) - 1)], $except)) continue;
+            if (self::has_exclude($path, $exclude)) continue;
 
             if (is_dir($path)) {
 
@@ -154,15 +161,14 @@ class CacheAutoload
                 }
 
                 if (!empty($filePath)) {
-                    $scan = self::scanFile($filePath, $fileName);
-                    if ($scan === true) {
-                        self::setLoader(hash("SHA1", $fileName), $filePath);
+                    if (self::scanFile($filePath, $fileName) === true) {
+                        self::setCache(hash("SHA1", $fileName), $filePath);
                         require "$filePath"; break;
                     } else {
-                        self::findFile($path, $fileName, $except);
+                        self::findFile($path, $fileName, $exclude);
                     }
                 } else {
-                    self::findFile($path, $fileName, $except);
+                    self::findFile($path, $fileName, $exclude);
                 }
 
             }
@@ -247,6 +253,27 @@ class CacheAutoload
 
         if (!array_key_exists(0, $classes)) return '';
         return $classes[0];
+    }
+
+    /**
+     * This method checks for excluded directories
+     * @param string $path
+     * @param array $exclude
+     * @return bool
+     */
+    private static function has_exclude(string $path, array $exclude): bool {
+        $path = str_replace("\\", "/", $path);
+        foreach ($exclude as $item) {
+            if (strpos($item, "/") !== false ||
+                strpos($item, "\\") !== false) {
+                $exclude_path = str_replace("\\", "/", $item);
+                if (stripos($path, $exclude_path) !== false) return true;
+            } else {
+                $path_arr = explode("/", $path);
+                if (in_array($item, $path_arr)) return true;
+            }
+        }
+        return false;
     }
 
 }
