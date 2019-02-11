@@ -13,7 +13,7 @@ define('APP_ROOT_PATH', 'Your project root folder');
 
 define('AUTOLOAD_EXCLUDE', 'Array of folder names you want CacheAutoload to ignore');
 
-define('AUTOLOAD_REQUIRE', 'Array of file paths (Not class files) you want CacheAutoload to constantly require each time the server is hit');
+define('AUTOLOAD_REQUIRE', 'Array of file paths (Not class files) you want CacheAutoload to constantly include each time the server is hit');
 
 require "app.autoload.php";
 
