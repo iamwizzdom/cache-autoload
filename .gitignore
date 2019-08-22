@@ -1,0 +1,7 @@
+# Created by .ignore support plugin (hsz.mobi)
+.gitignore
+.idea/cache-autoload.iml
+.idea/deployment.xml
+.idea/inspectionProfiles/
+.idea/modules.xml
+.idea/workspace.xml
