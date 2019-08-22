@@ -154,7 +154,7 @@ class CacheAutoload
 
             if (is_dir($path)) {
 
-                $class = str_replace("\\", "/", $fileName);
+                $class = preg_replace("/\\\\/", "/", $fileName);
                 $class = explode("/", $class);
                 $filePath = ""; $count = 0; $suffix_size = count(self::$suffix);
                 while (empty($filePath) && $count < $suffix_size) {
@@ -257,11 +257,11 @@ class CacheAutoload
      * @return bool
      */
     private static function has_exclude(string $path, array $exclude): bool {
-        $path = preg_replace("\\", "/", $path);
+        $path = preg_replace("/\\\\/", "/", $path);
         foreach ($exclude as $item) {
             if (strpos($item, "/") !== false ||
                 strpos($item, "\\") !== false) {
-                $exclude_path = preg_replace("\\", "/", $item);
+                $exclude_path = preg_replace("/\\\\/", "/", $item);
                 if (stripos($path, $exclude_path) !== false) return true;
             } else {
                 $path_arr = explode("/", $path);
@@ -276,7 +276,7 @@ class CacheAutoload
      */
     private static function get_package_name() {
         $package_path_arr = explode("/", preg_replace(
-            "\\", "/", self::$root_dir));
+            "/\\\\/", "/", self::$root_dir));
         $list = [];
         foreach ($package_path_arr as $package)
             if (!empty($package)) $list[] = $package;
