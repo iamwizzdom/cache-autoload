@@ -219,13 +219,14 @@ class CacheAutoload
             }
             $i++;
         }
-        if (!$namespace_ok) {
-            return false;
-        } else {
-            return $namespace;
-        }
+        return !$namespace_ok ? false : $namespace;
     }
 
+    /**
+     * This method returns the class name of a class file
+     * @param $filePath
+     * @return mixed|string
+     */
     private static function getClassName($filePath)
     {
         $php_code = file_get_contents($filePath);
@@ -236,6 +237,7 @@ class CacheAutoload
         for ($i = 2; $i < $count; $i++) {
             if (($tokens[$i - 2][0] == T_CLASS ||
                     $tokens[$i - 2][0] == T_INTERFACE ||
+                    $tokens[$i - 2][0] == T_ABSTRACT ||
                     $tokens[$i - 2][0] == T_TRAIT)
                 && $tokens[$i - 1][0] == T_WHITESPACE
                 && $tokens[$i][0] == T_STRING
@@ -245,11 +247,40 @@ class CacheAutoload
                 $classes[] = $class_name;
             }
         }
+        return !array_key_exists(0, $classes) ? '' : $classes[0];
+    }
 
-        if (!array_key_exists(0, $classes)) {
-            return '';
+    /**
+     * This method checks for excluded directories
+     * @param string $path
+     * @param array $exclude
+     * @return bool
+     */
+    private static function has_exclude(string $path, array $exclude): bool {
+        $path = preg_replace("\\", "/", $path);
+        foreach ($exclude as $item) {
+            if (strpos($item, "/") !== false ||
+                strpos($item, "\\") !== false) {
+                $exclude_path = preg_replace("\\", "/", $item);
+                if (stripos($path, $exclude_path) !== false) return true;
+            } else {
+                $path_arr = explode("/", $path);
+                if (in_array($item, $path_arr)) return true;
+            }
         }
-        return $classes[0];
+        return false;
+    }
+
+    /**
+     * @return mixed
+     */
+    private static function get_package_name() {
+        $package_path_arr = explode("/", preg_replace(
+            "\\", "/", self::$root_dir));
+        $list = [];
+        foreach ($package_path_arr as $package)
+            if (!empty($package)) $list[] = $package;
+        return end($list) ?: current($list);
     }
 
 }
