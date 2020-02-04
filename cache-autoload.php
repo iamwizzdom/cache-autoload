@@ -56,7 +56,13 @@ class CacheAutoload
      * file, where CacheAutoload stores a cache of all file paths
      * @var string
      */
-    private static $cache_file_path = APP_ROOT_PATH . "/cache/autoload.json";
+    private static $cache_file_path = QUE_PATH . "/cache/autoload.json";
+
+    /**
+     * This property would be assigned the project package name
+     * @var string
+     */
+    private static $package_name;
 
     /**
      * This method adds more file paths to the $cache
@@ -83,16 +89,13 @@ class CacheAutoload
         $_SESSION['autoload'][$packageName] = [];
 
         if (file_exists(self::$cache_file_path)) {
-            $cache_file = @fopen(self::$cache_file_path, "r")
-            or die("Unable to open cache file!");
-            $cache_json_file = @fread($cache_file, filesize(self::$cache_file_path));
+            if (($cache_json_file = @file_get_contents(self::$cache_file_path)) === false)
+                die("Unable to read autoload cache file!");
             if (!empty($cache_json_file))
                 $_SESSION['autoload'][$packageName] = json_decode($cache_json_file, true);
-            @fclose($cache_file);
         }
 
         return $_SESSION['autoload'][$packageName];
-
     }
 
     /**
@@ -101,10 +104,9 @@ class CacheAutoload
      */
     private static function storeCache()
     {
-        $cache = @fopen(self::$cache_file_path, "w")
-        or die("Unable to open cache file!");
-        @fwrite($cache, json_encode(self::getCache(), JSON_PRETTY_PRINT));
-        @fclose($cache);
+        @file_put_contents(self::$cache_file_path,
+            json_encode(self::getCache(), JSON_PRETTY_PRINT))
+        or die("Unable to write to autoload cache file!");
     }
 
     /**
@@ -118,9 +120,9 @@ class CacheAutoload
 
         spl_autoload_register(function ($class_name) {
 
-            self::$cache = self::getCache();
+            $hash = sha1("{$class_name}:" . self::get_package_name());
 
-            $hash = hash("SHA1", $class_name);
+            self::$cache = self::getCache();
 
             if (!isset(self::$cache[$hash])) {
                 self::findFile(self::$root_dir, $class_name, self::$exclude);
@@ -129,7 +131,7 @@ class CacheAutoload
 
             $file = self::$cache[$hash];
             if (self::has_exclude($file, self::$exclude)) return false;
-            if (is_file($file)) require "$file";
+            elseif (is_file($file)) require_once "$file";
             else self::findFile(self::$root_dir, $class_name, self::$exclude);
 
             return true;
@@ -143,10 +145,22 @@ class CacheAutoload
      * @param $dir
      * @param $fileName
      * @param array $exclude
+     * @param bool $scanAllFiles
      */
-    private static function findFile($dir, $fileName, $exclude = [])
+    private static function findFile($dir, $fileName, $exclude = [], $scanAllFiles = false)
     {
         $glob = glob($dir . "/*");
+
+        $file_name = '';
+        if (!$scanAllFiles) {
+            $file_name = preg_replace("/\\\\/", "/", $fileName);
+            $file_name = explode("/", $file_name);
+            $file_name = end($file_name);
+        }
+
+        $suffix_size = count(self::$suffix);
+
+        $found = false;
 
         foreach ($glob as $path) {
 
@@ -154,23 +168,43 @@ class CacheAutoload
 
             if (is_dir($path)) {
 
-                $class = preg_replace("/\\\\/", "/", $fileName);
-                $class = explode("/", $class);
-                $filePath = ""; $count = 0; $suffix_size = count(self::$suffix);
-                while (empty($filePath) && $count < $suffix_size) {
-                    $file = $path . "/" . $class[(count($class) - 1)] . self::$suffix[$count];
-                    if (is_file($file)) $filePath = $file; $count++;
-                }
+                if ($scanAllFiles) {
 
-                if (!empty($filePath)) {
-                    if (self::scanFile($filePath, $fileName) === true) {
-                        self::setCache(hash("SHA1", $fileName), $filePath);
-                        require "$filePath"; break;
+                    $files = self::get_all_php_files($path);
+                    foreach ($files as $file) {
+                        $filePath = "{$path}/{$file}";
+                        if (self::scanFile($filePath, $fileName) === true) {
+                            self::setCache((sha1("{$fileName}:" . self::get_package_name())), $filePath);
+                            require_once "$filePath";
+                            $found = true; break;
+                        }
+                    }
+
+                    if ($found) break;
+                    else self::findFile($path, $fileName, $exclude, $scanAllFiles);
+
+                } else {
+
+                    $filePath = ""; $count = 0;
+                    while (empty($filePath) && $count < $suffix_size) {
+                        $file = $path . "/" . $file_name . self::$suffix[$count];
+                        if (is_file($file)) $filePath = $file; $count++;
+                    }
+
+                    if (!empty($filePath)) {
+                        if (self::scanFile($filePath, $fileName) === true) {
+                            self::setCache((sha1("{$fileName}:" . self::get_package_name())), $filePath);
+                            require_once "$filePath";
+                            $found = true; break;
+                        } else self::findFile($path, $fileName, $exclude);
                     } else self::findFile($path, $fileName, $exclude);
-                } else self::findFile($path, $fileName, $exclude);
+
+                }
 
             }
         }
+
+        if (!$found && !$scanAllFiles) self::findFile($dir, $fileName, $exclude, true);
 
     }
 
@@ -184,10 +218,22 @@ class CacheAutoload
     private static function scanFile(string $filePath, string $class_name)
     {
         $namespace = self::getNamespace($filePath);
-        $className = self::getClassName($filePath);
-        if ($namespace !== false)
-            if ($class_name == ($namespace . "\\" . $className)) return true; else return false;
-        elseif ($class_name == $className) return true; else return false;
+        $classNames = self::getClassName($filePath);
+        $match = false;
+        foreach ($classNames as $className) {
+            if ($namespace !== false) {
+                if ($class_name === ($namespace . "\\" . $className)) {
+                    $match = true;
+                    break;
+                }
+            } else {
+                if ($class_name === $className) {
+                    $match = true;
+                    break;
+                }
+            }
+        }
+        return $match;
     }
 
     /**
@@ -223,31 +269,41 @@ class CacheAutoload
     }
 
     /**
-     * This method returns the class name of a class file
+     * This method returns the class name(s) found in a class file
      * @param $filePath
-     * @return mixed|string
+     * @return array
      */
     private static function getClassName($filePath)
     {
         $php_code = file_get_contents($filePath);
 
-        $classes = array();
+        $classes = [];
         $tokens = token_get_all($php_code);
         $count = count($tokens);
         for ($i = 2; $i < $count; $i++) {
-            if (($tokens[$i - 2][0] == T_CLASS ||
-                    $tokens[$i - 2][0] == T_INTERFACE ||
-                    $tokens[$i - 2][0] == T_ABSTRACT ||
-                    $tokens[$i - 2][0] == T_TRAIT)
-                && $tokens[$i - 1][0] == T_WHITESPACE
-                && $tokens[$i][0] == T_STRING
-            ) {
-
-                $class_name = $tokens[$i][1];
-                $classes[] = $class_name;
-            }
+            if (($tokens[$i - 2][0] === T_CLASS ||
+                    $tokens[$i - 2][0] === T_INTERFACE ||
+                    $tokens[$i - 2][0] === T_ABSTRACT ||
+                    $tokens[$i - 2][0] === T_TRAIT)
+                && $tokens[$i - 1][0] === T_WHITESPACE
+                && $tokens[$i][0] === T_STRING
+            ) $classes[] = $tokens[$i][1];
         }
-        return !array_key_exists(0, $classes) ? '' : $classes[0];
+        return $classes;
+    }
+
+    /**
+     * This method returns a list of php files in a given directory
+     * @param $dir
+     * @return array|false
+     */
+    private static function get_all_php_files($dir) {
+        $files = scandir($dir);
+        foreach ($files as $key => $file) {
+            if (!str_ends_with(strtolower($file), '.php'))
+                unset($files[$key]);
+        }
+        return $files;
     }
 
     /**
@@ -272,15 +328,17 @@ class CacheAutoload
     }
 
     /**
+     * The method would return the project package name
      * @return mixed
      */
     private static function get_package_name() {
-        $package_path_arr = explode("/", preg_replace(
-            "/\\\\/", "/", self::$root_dir));
-        $list = [];
-        foreach ($package_path_arr as $package)
-            if (!empty($package)) $list[] = $package;
-        return end($list) ?: current($list);
+
+        if (empty(self::$package_name)) {
+            $package_path_arr = explode("/", preg_replace("/\\\\/", "/", self::$root_dir));
+            self::$package_name = end($package_path_arr) ?: current($package_path_arr);
+        }
+
+        return self::$package_name;
     }
 
 }
